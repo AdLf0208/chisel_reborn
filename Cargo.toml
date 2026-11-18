@@ -1,0 +1,18 @@
+[package]
+# Ported from: Chisel Reborn 2.0.1 (matthewperiut/Chisel-Fabric tag 1.21.1-2.0.1,
+# GPL-2.0-only; the jar's neoforge.mods.toml declares GPLv2). The conversion rule is a
+# clean-room Rust rewrite; the textures, models, blockstates and lang are the upstream
+# mod's own assets and travel under the same licence (LICENSE, LICENSE-NOTICE.md). This is
+# the port's own version: the retired .hnmod bundle was 0.1.0, and a resubmission is a new
+# version.
+name = "horizon-chisel"
+version = "0.2.0"
+edition = "2024"
+license = "GPL-2.0-only"
+description = "Chisel Reborn's andesite family and the chisel that converts between its variants, for Horizon"
+
+[dependencies]
+# The pinned SDK's API crate, fetched into .horizon/sdk/ by any `cargo horizon-mod` command (the
+# launcher builds against its own copy of the same build). Any other registry dependency must be
+# pinned with `horizon-launcher native-lock .` before building.
+horizon-mod-api = { path = ".horizon/sdk/api/crates/horizon-mod-api" }
