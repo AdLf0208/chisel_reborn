@@ -1,0 +1,35 @@
+# Chisel Reborn for Horizon — two block families (andesite, blackstone) and the chisel, one
+# flat SDK package (mod API 0.2).
+#
+# Migrated 2026-11-18 from the retired `.hnmod` container (Horizon's mod-API merge #16941, launcher
+# >= 0.2.70; PR #17992). One file now carries both halves: `assets/` + `data/` are the carried
+# content (the andesite family's 32 variants, the blackstone family's pillar, and the chisel item)
+# and `src/` is the port's code (the family tables and the left-click conversion).
+# `src/runtime.rs` carried over byte-identical at 0.2.0 and gained the blackstone family at 0.2.2
+# (the andesite table and the walk itself are unchanged).
+#
+# Licence: GPL-2.0-only, read from the jar's `META-INF/neoforge.mods.toml` (`modLicense = "GPLv2"`);
+# rank 1, copyleft — publishable under the same licence with its complete corresponding source.
+# `LICENSE` and `LICENSE-NOTICE.md` travel inside the package. Local-only until the maintainer
+# approves publishing (ARCHITECTURE.md section 8).
+id = "chisel"
+name = "Chisel Reborn"
+# The port's own version, not the original mod's 2.0.1: a resubmission is always a new version
+# (the retired .hnmod bundle was 0.1.0).
+version = "0.2.2"
+description = """The andesite family of Chisel Reborn (all 32 of its variants), the blackstone family (its pillar), and the chisel that converts a placed block into the next member of its own family. Left-click a block with the chisel in hand and it is not mined: it becomes the next variant in the registration order (for andesite: vanilla andesite, polished andesite, then array, braid, ... and back to vanilla; for blackstone: blackstone, polished blackstone, chiseled, the brick forms, then the chisel pillar and back), always written as its default state, so a conversion into pillar or twist lands on axis=y. A block outside every carried family is left alone and is still not mined. This port carries two of the 100 material families; the other 98, the chisel's bundle GUI and the connected textures are not ported yet."""
+authors = ["Chisel Reborn: matthewperiut", "original Chisel: ttterrag1098 and contributors"]
+# A native mod: Rust in src/, compiled by the launcher against the game build [native] pins, beside
+# the carried assets/ and data/. The id is the resource namespace and the only identity.
+api = "0.2"
+# The installation side, not the hook's: an integrated server belongs to the client installation,
+# so a single-player world or a LAN host needs both.
+side = "both"
+# The one shared value every manifest carries ("May add blocks, items, mob effects and entity
+# types"). This package carries 32 blocks and an item, so the claim is real.
+capabilities = ["registries"]
+
+[native]
+game = "26.3"
+horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"

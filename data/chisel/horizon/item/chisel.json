@@ -1,0 +1,16 @@
+{
+  "template": "minecraft:iron_ingot",
+  "max_stack_size": 1,
+  "components": {
+    "minecraft:tool": {
+      "default_mining_speed": 500.0,
+      "damage_per_block": 0,
+      "rules": [
+        {
+          "blocks": "#minecraft:mineable/pickaxe",
+          "speed": 500.0
+        }
+      ]
+    }
+  }
+}
