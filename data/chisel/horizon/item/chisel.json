@@ -2,6 +2,7 @@
   "template": "minecraft:iron_ingot",
   "max_stack_size": 1,
   "components": {
+    "minecraft:bundle_contents": [],
     "minecraft:tool": {
       "default_mining_speed": 500.0,
       "damage_per_block": 0,

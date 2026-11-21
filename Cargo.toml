@@ -6,10 +6,10 @@
 # the port's own version: the retired .hnmod bundle was 0.1.0, and a resubmission is a new
 # version.
 name = "horizon-chisel"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 license = "GPL-2.0-only"
-description = "Chisel Reborn's andesite and blackstone families and the chisel that converts between the variants of each, for Horizon"
+description = "Chisel Reborn's andesite and blackstone families, and the chisel that converts between a family's variants or to the block it carries, for Horizon"
 
 [dependencies]
 # The pinned SDK's API crate, fetched into .horizon/sdk/ by any `cargo horizon-mod` command (the

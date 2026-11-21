@@ -75,6 +75,32 @@ pub fn next_variant(current: &str) -> Option<&'static str> {
     FAMILIES.iter().find_map(|family| next_in(family, current))
 }
 
+/// Whether a chisel carrying `chosen` writes it over `target`.
+///
+/// This is upstream's second branch (`ChiselItem.canMine`): with a block in its bundle the
+/// chisel does not walk the group at all, it writes that block. The two ids are compared on
+/// their **last path segment** (`chisel:panel/andesite` answers `andesite`), and either one
+/// containing the other is a match, so `minecraft:polished_andesite` and
+/// `minecraft:andesite_slab` both take an `andesite` lock. A target whose segment names a
+/// stair never matches: upstream refuses stairs outright.
+#[must_use]
+pub fn lock_matches(target: &str, chosen: &str) -> bool {
+    let (target, chosen) = (segment(target), segment(chosen));
+    if target.is_empty() || chosen.is_empty() {
+        return false;
+    }
+    if target.contains("stairs") {
+        return false;
+    }
+    target.contains(chosen) || chosen.contains(target)
+}
+
+/// The last `/`-separated segment of an id's path (`chisel:panel/andesite` answers `andesite`).
+fn segment(id: &str) -> &str {
+    let path = id.split_once(':').map_or(id, |(_, path)| path);
+    path.rsplit('/').next().unwrap_or(path)
+}
+
 /// The member after `current` within `family`, or `None` when `current` is not in it.
 fn next_in(family: &[&'static str], current: &str) -> Option<&'static str> {
     let index = family.iter().position(|member| *member == current)?;
@@ -294,5 +320,70 @@ mod tests {
             "a block appears in more than one family"
         );
         assert_eq!(FAMILIES.len(), 2, "andesite and blackstone");
+    }
+
+    #[test]
+    fn a_held_block_locks_the_conversion_to_its_material() {
+        // `ChiselItem.canMine`'s second branch: the bundle's front block replaces the walk.
+        for (target, chosen) in [
+            ("chisel:array/andesite", "chisel:panel/andesite"),
+            ("minecraft:andesite", "chisel:pillar/andesite"),
+            ("minecraft:polished_andesite", "chisel:panel/andesite"),
+            ("chisel:zag/andesite", "minecraft:polished_andesite"),
+        ] {
+            assert!(
+                lock_matches(target, chosen),
+                "{target} should take a lock on {chosen}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lock_matches_by_containment_either_way() {
+        // The comparison is `contains`, not equality, on the last path segment.
+        assert!(
+            lock_matches("minecraft:andesite_slab", "chisel:panel/andesite"),
+            "a slab's segment contains the lock's"
+        );
+        assert!(
+            lock_matches("minecraft:polished_andesite", "minecraft:andesite"),
+            "a polished variant's segment contains the lock's"
+        );
+        assert!(
+            lock_matches("chisel:array/andesite", "minecraft:andesite"),
+            "the lock's segment is contained by the target's"
+        );
+    }
+
+    #[test]
+    fn a_lock_of_another_material_matches_nothing() {
+        for (target, chosen) in [
+            ("minecraft:blackstone", "chisel:panel/andesite"),
+            ("chisel:pillar/andesite", "minecraft:blackstone"),
+            ("minecraft:dirt", "minecraft:andesite"),
+            ("minecraft:andesite", "minecraft:blackstone"),
+            ("", "chisel:panel/andesite"),
+            ("minecraft:andesite", ""),
+            ("", ""),
+        ] {
+            assert!(
+                !lock_matches(target, chosen),
+                "{target} must not take a lock on {chosen}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stair_is_never_locked() {
+        // Upstream refuses `compare[1].contains("stairs")` before it compares anything; a
+        // slab of the same material is not refused, so this is the stair rule alone.
+        assert!(!lock_matches(
+            "minecraft:andesite_stairs",
+            "chisel:panel/andesite"
+        ));
+        assert!(lock_matches(
+            "minecraft:andesite_slab",
+            "chisel:panel/andesite"
+        ));
     }
 }

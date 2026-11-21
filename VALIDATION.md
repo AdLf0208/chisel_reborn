@@ -224,3 +224,45 @@ creative inventory screen has no 2x2 crafting grid (phase 6 switches to survival
 `click-slot` is applied on the next tick, so the four grid clicks need `ctl wait 1` between
 them; and `reply=$(ctl …)` under `set -e` ends the script with no message — the control leg
 died silently at its first refused `setblock` until `setblock()` captured with `|| fail`.
+
+## 6. Slice 3 — the chisel's bundle contents (0.2.3, 2026-11-21, pin `0a875da`)
+
+Full record, the coverage table and the `ctl` lines: `notes.md` → *Slice 3*. This section is the
+ladder and the leg status in one place. The pin moved from `0b14f8a` to `0a875da` during the
+slice; every number here is from the new pin (`mixins` unchanged, `e59da90…`).
+
+**Ladder** (each compile in a `build-slot.sh` lease, `BUILD_LOCAL=1`, `CARGO_INCREMENTAL=0`, no
+`--target-dir`, `rm -f Cargo.lock` before each build):
+
+| step | command | result | evidence |
+|---|---|---|---|
+| red first | `cargo test --offline` (stubs + new tests) | exit 101, 8 failed, `not yet implemented: the lock rule` | `../_shared/evidence/chisel/slice3-test-red.log` |
+| tests | `cargo test --offline` | **28 passed**, 0 failed (16 runtime, 12 glue) | `sdk-test.log` |
+| lints | `cargo clippy --all-targets --offline -- -D warnings` | exit 0, 0 warnings | `sdk-clippy.log` |
+| format | `cargo fmt --check` | exit 0 | in the lints lease |
+| build ×2 | `cargo horizon-mod build` | byte-identical, **118,046 B** sha256 `a4169ab7…4dd5`, 304 entries | `slice3-build-1.log`, `slice3-build-2.log` |
+| check | `cargo horizon-mod check chisel.hmod` | `chisel 0.2.3 (native-mod, format native-1/0a875da…/e59da90…)`, exit 0 | `sdk-check.log` |
+| fits (own pin) | `cargo horizon-mod fits chisel.hmod --build 0a875da` | `0a875da  made for`, exit 0 | `sdk-fits.log` |
+| fits (different) | `cargo horizon-mod fits chisel.hmod --build 0b14f8a` | `0b14f8a  fits`, exit 0 | `sdk-fits.log` |
+| gate | `verify-sdk-package.py chisel` | **1/1** | printed |
+
+**In game** — the launcher build `native-0a875da-7ed44a5b954e` (chisel 0.2.3, instance
+`chisel-e2e`), five legs of `tools/e2e-all.sh` plus the standalone control run; logs in
+`../_shared/evidence/chisel-e2e/`:
+
+| leg | result |
+|---|---|
+| the chisel | `PASS:` + `EXIT:0` |
+| counterfactual (stone pickaxe) | `PASS:` + `EXIT:0` |
+| selftest (andesite) | `FAIL: the chisel left chisel:braid/andesite, expected chisel:array/andesite` + `EXIT:1` |
+| selftest (blackstone) | `FAIL: vanilla blackstone became minecraft:polished_blackstone, expected minecraft:blackstone` + `EXIT:1` |
+| selftest (bundle) | `FAIL: the locked chisel wrote chisel:panel/andesite, expected minecraft:polished_andesite` + `EXIT:1` |
+| control (no package) | `FAIL: setblock chisel:array/andesite … {"error":"unknown block name"}` + `EXIT:1` |
+
+`check-e2e-logs.py chisel-e2e --strict` → `logs=6 ok=6 missing-exit=0 bad-exit=0`, exit 0.
+
+**Harness facts measured this slice**: a block goes into a bundle by a left click on the bundle
+slot with the block on the cursor; a right click does *not* take it back out for the host's own
+click (a vanilla `minecraft:bundle` behaves the same), so phase 8d proves the lock's replacement;
+the creative inventory screen is the item list, so phase 8 runs in survival; and the launcher
+instance must sit at the package's base build (`HORIZON_E2E_INSTANCE=chisel-e2e`).

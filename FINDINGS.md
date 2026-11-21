@@ -79,7 +79,10 @@ is the conversion path: with a chisel in hand, a **mining attempt** on a block
 3. if the chisel's bundle is empty → `Registries.BLOCK.get(random member).getDefaultState()`
    is written to the block's position and `chisel:chisel_sound` plays;
 4. if the bundle holds a block → the last `/`-segment of the held item's path must contain,
-   or be contained by, the target's, and the held block is written instead.
+   or be contained by, the target's, and the held block is written instead. A target whose
+   segment holds `stairs` is refused before the comparison. The carried block is **not**
+   consumed, and a bundle branch that does not match writes nothing (there is no fallback to
+   the group). Carried by slice 3 (0.2.3) as `runtime::lock_matches`.
 
 `getMiningSpeed` returns **500** for every block (`ChiselItem.java:173-181`), so the mining
 attempt completes at once; `isItemBarVisible` is `false` (`:39-42`) — no durability.
@@ -221,10 +224,11 @@ the group in order (see `notes.md`).
 
 ## 8. What the port cannot express at this pin (gaps, not fakes)
 
-- The **GUI** (`ChiselScreenHandler`, a bundle-backed inventory) — a machines-tier menu +
-  screen; not in slice 1.
-- The chisel's **bundle contents** (choosing the exact variant to write) — the 26.3 item is
-  declared with `max_stack_size` 1 and no bundle; slice 1 converts to the next variant.
+- The **GUI** (`ChiselScreenHandler`, a bundle-backed inventory) — not carried. At this pin a
+  bundle's contents are edited by the game's own inventory, so slice 3 (0.2.3) ships the
+  component and no window; the capability, not the 1.21.1 screen.
+- The chisel's **bundle contents** — carried from 0.2.3: the item declares
+  `minecraft:bundle_contents`, and a carried block is what the chisel writes (`lock_matches`).
 - The **mod sound** `chisel:chisel_sound`: `native_play_sound` (API 25) plays registered
   **vanilla** sound events only, so the conversion is silent.
 - **CTM** (Athena/OptiFine connected textures, 4,796 `optifine/` files + 4,795 `ctm/`

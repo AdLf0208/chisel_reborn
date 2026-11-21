@@ -6,6 +6,9 @@ Ported from **Chisel Reborn 2.0.1+mc1.21.1** for Minecraft Java 26.3 on Horizon
 package format** (`api = "0.2"`, version **0.2.0**) on SDK nightly
 **`0b14f8acfd97fa2c750e42795249dcc981178ca4`** / horizon-mixins
 **`e59da9094f0c2fdda6c627fe9eff22dec6a906f0`** — see *Migration to the SDK format*.
+**0.2.3 is republished on the campaign pin `0a875da91dbb0fdcb7ba8c42c11341aa229af51a`**
+(mixins unchanged) — see *Slice 3*; the 0.2.0/0.2.2 numbers below stay as the historical record of
+the `0b14f8a` runs.
 The jar is
 `ports/_shared/licence-cache/chisel-neoforge-2.0.1+mc1.21.1.jar`; the behaviour was read
 from the upstream repository at tag `1.21.1-2.0.1`
@@ -637,5 +640,285 @@ entry can never make a phantom block appear. Worth an upstream report: no (a sta
 > blackstone placements and conversions, the **crafted** chisel recipe (iron ingot + stick,
 > ingredients consumed), the unregistered-id refusal and a blackstone-only selftest leg. Same
 > gaps: 98 material families, the bundle GUI, the sound, CTM.
+
+Skills: superpowers/using-superpowers,brainstorming,writing-plans,test-driven-development,systematic-debugging,verification-before-completion; BeautifulRust/rust-best-practices,rust-port
+
+## Slice 3 — the chisel's bundle contents (0.2.3, 2026-11-21)
+
+### The slice the notes named
+
+The scope authority is this file's **Gaps (slice boundary)**, gap 2, verbatim:
+
+> **The chisel GUI** (`ChiselScreenHandler`, a bundle-backed inventory screen, and
+> `ChiselItem.createMenu`) and the chisel's **bundle contents** (put a block in the chisel
+> to choose the exact variant, `ChiselItem.canMine`'s second branch) are machines-tier
+> work: a menu + screen + a component-carrying inventory. Slice 1 has neither; the item is
+> declared `max_stack_size` 1 with no bundle component.
+
+**Chosen: the chisel's bundle contents — `ChiselItem.canMine`'s second branch — with the
+component-carrying inventory that makes it reachable.** This is the machines half of the
+tier (`horizon/docs/modpacks.md`: a `machines` port owns "menus/screens, item/fluid/energy
+tanks"; an item-carried container is the item half of that), and it is the last mechanic the
+mod has that the port still lacks: the port could only ever walk a family in order, never
+write the variant the player chose.
+
+Why not the custom screen half of gap 2: upstream's screen exists because a 1.21.1 bundle
+had no inventory UI. At this pin a bundle's contents are edited by the game's own inventory
+(a stack clicked onto a bundle goes in — `crates/horizon-client/src/lan/menu.rs`,
+`bundle_click`, and the mod API exposes the same component as `minecraft:bundle_contents`,
+`item_bundle_*`). A mod screen would be *new* surface the mod does not have, and the pin has
+no item-opened container menu (`host.open_menu` is a chest menu of ordinary items). The
+port therefore ships the mechanic on the component the game already edits — the faithful
+shape at this pin — and records the mapping in *Behaviour changes caused by the mapping*.
+
+Left for a later slice: the other 98 material families (1,376 blocks), the sound, CTM, the
+extra translations/tags.
+
+### Plan (written before any code)
+
+1. **`src/runtime.rs` (TDD, tests first).** Add the pure rule of upstream's second branch:
+   `lock_matches(target, chosen)` — the last path segment of the two ids must contain one
+   another (either direction), and a target whose segment holds `stairs` never matches
+   (`ChiselItem.java:158-167`). New tests, written first and watched fail: the material
+   match, the containment match, another material never matching, an empty id never
+   matching, and the stairs refusal. The 12 existing tests stay unchanged.
+2. **`src/lib.rs`.** `dig()` takes the block the bundle holds (`Option<&str>`); when it is
+   present the rule is *the lock*, never the group walk, and a lock of another material
+   writes nothing (upstream returns `false` with no write). The hook reads the chisel's
+   effective `minecraft:bundle_contents` (`ItemResource::value`) and decodes the front item.
+   Glue tests written first against a `todo!()`: the lock wins over the walk, another
+   material refuses, a restricted player still converts nothing, and the component decodes
+   front first.
+3. **Content.** `data/chisel/horizon/item/chisel.json` gains
+   `"minecraft:bundle_contents": []` — the component that makes the chisel a bundle at this
+   pin (`horizon-items/src/items.rs:809`: `bundle: c.get(...).is_some()`), so the game's
+   inventory inserts a clicked block into it.
+4. **e2e (`tools/e2e.sh`, `tools/e2e-all.sh`).** Phase 8 inserts a block in the chisel
+   through the game's own inventory (open, pick up, click onto the chisel, close), asserts
+   the inventory no longer holds a free stack of it, then digs: `minecraft:andesite` becomes
+   `chisel:panel/andesite` (not the walk's `minecraft:polished_andesite`), a blackstone block
+   is left alone (the lock never leaves its material, where the walk would have converted
+   it), and a second andesite dig writes the same block again (upstream never consumes it).
+   A fifth leg, `SELFTEST=bundle`, flips only phase 8a so the run fails exactly at the new
+   assertion.
+5. **Ladder + package.** `rm -f Cargo.lock`; `cargo test --offline`; clippy `-D warnings`;
+   `cargo fmt --check`; two `cargo horizon-mod build` runs `cmp`-identical; `check`; `fits`
+   at the pin **and at another build**; `verify-sdk-package.py chisel` 1/1.
+6. **In game.** `ports/tools/launcher-game.sh build chisel` (the launcher-built game at the
+   pin) with `HORIZON_E2E_INSTANCE=chisel-e2e`, the control leg against the same Nightly without
+   the package, and the five legs of `e2e-all.sh`; `check-e2e-logs.py chisel-e2e --strict` green.
+7. **Version** 0.2.2 → **0.2.3**; the registry entry is not touched.
+
+### What changed in the code
+
+- `src/runtime.rs`: `lock_matches(target, chosen)` — the pure rule of upstream's second branch.
+  The last `/`-segment of the two ids is compared, either containing the other (`contains`, not
+  equality), a target whose segment names a stair never matches, and an empty id never does. The
+  two family tables, `next_variant` and their 12 tests are untouched; four tests are new.
+- `src/lib.rs`: `dig()` takes `chosen` (the front block of the chisel's bundle). A chisel carrying
+  a block **never walks**: it writes that block when `lock_matches` says yes and writes nothing
+  when it says no — upstream's `if (!bcc.isEmpty()) { … return false; }` (the bundle branch ends
+  the method, so there is no fallback to the group). `bundle_front()` reads the effective
+  `minecraft:bundle_contents` (`ItemResource::value`, so the item's declared default counts) and
+  `bundle_ids()` decodes the list front first; five glue tests are new (the lock wins over the
+  walk, another material refuses, a restricted player still converts nothing, and the decode's
+  bare-id/compound and empty/odd cases as two tests).
+- `data/chisel/horizon/item/chisel.json` (and `tools/gen_content.py`): the chisel declares
+  `"minecraft:bundle_contents": []`, which is what makes it a bundle at this pin
+  (`horizon-items/src/items.rs:809`). **The other 295 carried files are byte-identical**: the
+  generator rewrote all 296 and a `sha256sum` diff before/after shows only the item file changed.
+
+### The red proof (before the fix)
+
+`cargo test --offline`, with `lock_matches`, `dig`'s lock branch, `bundle_front` and `bundle_ids`
+as `todo!()` stubs (`../_shared/evidence/chisel/slice3-test-red.log`, exit **101**, 8 failed):
+
+```
+thread 'runtime::tests::a_held_block_locks_the_conversion_to_its_material' (222123) panicked at src/runtime.rs:88:5:
+not yet implemented: the lock rule
+thread 'runtime::tests::a_lock_matches_by_containment_either_way' (222124) panicked at src/runtime.rs:88:5:
+not yet implemented: the lock rule
+thread 'runtime::tests::a_lock_of_another_material_matches_nothing' (222125) panicked at src/runtime.rs:88:5:
+not yet implemented: the lock rule
+thread 'runtime::tests::a_stair_is_never_locked' (222126) panicked at src/runtime.rs:88:5:
+not yet implemented: the lock rule
+thread 'tests::a_chisel_carrying_a_block_writes_that_block' (222137) panicked at src/lib.rs:63:9:
+not yet implemented: the lock of a chisel carrying a block
+thread 'tests::bundle_contents_decode_to_the_ids_inside' (222142) panicked at src/lib.rs:85:5:
+not yet implemented: decoding minecraft:bundle_contents
+```
+
+(Two more tests failed in the same run — `a_lock_of_another_material_writes_nothing` and
+`bundle_contents_that_hold_nothing_decode_to_nothing` — and one fixture of mine was wrong on the
+first green attempt: `chisel:pillar/blackstone` *does* take a blackstone lock, which the test had
+listed as a non-match. Fixed in the fixture, not in the rule.)
+
+### The ladder (measured 2026-11-21)
+
+The campaign pin moved to Horizon **`0a875da91dbb0fdcb7ba8c42c11341aa229af51a`** (mixins unchanged,
+`e59da90…`) while this slice was in flight, so the package was republished on it: `[native] horizon`
+= `0a875da`, and every number below is from that pin. `cargo horizon-mod build` re-fetched the SDK
+into `.horizon/sdk/` (`"commit": "0a875da…"`); no source change was needed (the delta's three
+breaking hooks — `attack_entity`, `entity_interact`, `hanging_break` — are not used here).
+
+Every compile ran in a `ports/tools/build-slot.sh` lease with `BUILD_LOCAL=1`, `CARGO_INCREMENTAL=0`,
+no `--target-dir`, `rm -f Cargo.lock` before each build.
+
+| Step | Command | Result | Evidence |
+|---|---|---|---|
+| red first | `cargo test --offline` (stubs + new tests) | **exit 101**, 8 failed, `not yet implemented: the lock rule` | `slice3-test-red.log` |
+| tests | `cargo test --offline` | **28 passed**, 0 failed (16 `runtime::`, 12 `tests::`) | `sdk-test.log` |
+| lints | `cargo clippy --all-targets --offline -- -D warnings` | exit 0, **0 warnings** | `sdk-clippy.log` |
+| format | `cargo fmt --check` | exit 0 (`FMT-OK`) | in the lints lease |
+| package | `rm -f Cargo.lock && cargo horizon-mod build` | `SDK 0a875da … in ./.horizon/sdk` / `Built ./target/horizon-mod/chisel.hmod` | `slice3-build-1.log` |
+| second build | the same again | **byte-identical** (`cmp`) | `slice3-build-2.log` |
+| registry check | `cargo horizon-mod check chisel.hmod` | `chisel 0.2.3 (native-mod, format native-1/0a875da…/e59da90…, for 26.3)`, **EXIT 0** | `sdk-check.log` |
+| fits, own pin | `cargo horizon-mod fits chisel.hmod --build 0a875da` | `0a875da  made for`, exit 0 | `sdk-fits.log` |
+| fits, **different build** | `cargo horizon-mod fits chisel.hmod --build 0b14f8a` | `0b14f8a  fits`, exit 0 | `sdk-fits.log` |
+| fits, nightly | `cargo horizon-mod fits chisel.hmod --build nightly` | `0a875da  made for`, exit 0 | `sdk-fits.log` |
+| package gate | `python3 ports/tools/verify-sdk-package.py chisel` | **1/1**, every check ok, 28 tests | printed |
+
+```
+$ cargo horizon-mod check chisel.hmod
+chisel 0.2.3 (native-mod, format native-1/0a875da91dbb0fdcb7ba8c42c11341aa229af51a/e59da9094f0c2fdda6c627fe9eff22dec6a906f0, for 26.3)
+  118046 bytes, SHA-256 a4169ab73a4e04b427d2fc0f0eb834c72fd70182891f88d5a7bca1bed6c44dd5, unsigned
+  native source: unsandboxed; not executed by the registry check. Compile and test against the exact pinned Horizon and Mixins revisions before review.
+
+$ cargo horizon-mod fits chisel.hmod --build 0a875da
+Chisel Reborn:
+0a875da  made for
+
+$ cargo horizon-mod fits chisel.hmod --build 0b14f8a
+Chisel Reborn:
+0b14f8a  fits
+```
+
+### Package (0.2.3)
+
+`chisel.hmod` — **118,046 B**, SHA-256
+`a4169ab73a4e04b427d2fc0f0eb834c72fd70182891f88d5a7bca1bed6c44dd5`, **304 entries**
+(`horizon-mod.toml`, `Cargo.toml`, `LICENSE`, `LICENSE-NOTICE.md`, `README.md`, `src/lib.rs`,
+`src/runtime.rs`, `uses.json`, 226 `assets/` files, 70 `data/` files). Built twice with identical
+bytes. No `Cargo.lock`. `uses.json`: 83 entries, `made_for = 0a875da…`.
+
+### In game (2026-11-21, pin `0a875da`)
+
+The game is the launcher's build at the SDK pin carrying this package:
+`HORIZON_E2E_INSTANCE=chisel-e2e ports/tools/launcher-game.sh build chisel` →
+`native-0a875da-7ed44a5b954e`, exported to `~/.cache/horizon-e2e/0a875da/chisel`; the control is
+the same Nightly unmodified (`~/.cache/horizon-e2e/0a875da/control`). The five legs of
+`tools/e2e-all.sh` plus the standalone control run:
+
+| leg | log | result |
+|---|---|---|
+| the chisel (default) | `../_shared/evidence/chisel-e2e/e2e-launcher.log` | `PASS:` + `EXIT:0` |
+| counterfactual (stone pickaxe) | `e2e-launcher-counterfactual.log` | `PASS:` + `EXIT:0` |
+| selftest (andesite) | `e2e-launcher-selftest.log` | `FAIL: the chisel left chisel:braid/andesite, expected chisel:array/andesite` + `EXIT:1` |
+| selftest (blackstone) | `e2e-launcher-selftest-blackstone.log` | `FAIL: vanilla blackstone became minecraft:polished_blackstone, expected minecraft:blackstone` + `EXIT:1` |
+| **selftest (bundle, this slice)** | `e2e-launcher-selftest-bundle.log` | `FAIL: the locked chisel wrote chisel:panel/andesite, expected minecraft:polished_andesite` + `EXIT:1` |
+| control (same Nightly, no package) | `e2e-launcher-control.log` | `FAIL: setblock chisel:array/andesite … {"error":"unknown block name"}` + `EXIT:1` |
+
+`python3 ports/tools/check-e2e-logs.py chisel-e2e --strict` → `logs=6 ok=6 missing-exit=0
+bad-exit=0` (exit 0).
+
+The new behaviour's `ctl` lines, verbatim from `e2e-launcher.log`:
+
+```
+== phase 8: a block put in the chisel locks the conversion to that block ==
+  inventory slots: chisel=0 panel=1
+  inventory after locking: {"chisel:chisel":1}
+  a locked chisel on minecraft:andesite -> chisel:panel/andesite (chisel block items 0 -> 0)
+== phase 8b: the lock never leaves its material ==
+  the same chisel on minecraft:blackstone -> minecraft:blackstone
+== phase 8c: the carried block is not consumed ==
+  the same chisel on chisel:array/andesite -> chisel:panel/andesite
+== phase 8d: putting another block in front changes the lock ==
+  inventory after the second lock: {"chisel:chisel":1}
+  a chisel carrying panel then array on minecraft:andesite -> chisel:array/andesite
+```
+
+and the selftest leg, which is the proof phase 8a can fail:
+
+```
+(selftest: asserting the locked chisel walks to minecraft:polished_andesite)
+FAIL: the locked chisel wrote chisel:panel/andesite, expected minecraft:polished_andesite
+EXIT:1
+```
+
+**The 0.2.2 package would fail every phase-8 assertion, by construction** (not re-run against
+it): its chisel has no `minecraft:bundle_contents`, so the block clicked onto it stays a free
+stack (phase 8's `inventory after locking` would still list `chisel:panel/andesite`) and the dig
+walks to `minecraft:polished_andesite` / `chisel:braid/andesite` instead of writing the carried
+block; the blackstone dig would convert instead of leaving the block alone. The `SELFTEST=bundle`
+leg is the proof the assertion is alive on the new package (it fails there while every other
+phase stays green).
+
+### Behaviour changes caused by the mapping (slice 3)
+
+1. **The custom screen is the game's own bundle UI.** Upstream's `ChiselScreenHandler` exists
+   because a 1.21.1 bundle had no inventory UI: you put the block into the chisel through the
+   mod's screen. At this pin a bundle's contents are edited by the game's inventory (a stack
+   clicked onto a bundle goes in, `lan/menu.rs`'s `bundle_click`; the tooltip lists the contents),
+   so the port ships the component and no screen. A player notices: no chisel window; the block
+   goes in by picking it up and clicking it onto the chisel in the inventory.
+2. **The carried block is never consumed.** Upstream reads `bcc.get(0)` and writes it without
+   removing it, so the lock is permanent until the player changes the bundle. Kept as it is
+   (phase 8c proves the repeat write).
+3. **The front item is the lock.** A bundle's insert puts the new stack at the front and the
+   conversion reads the front, so putting a second block in changes the lock (phase 8d).
+4. **A carried item that is not a block writes nothing.** Upstream resolves the item id through
+   `Registries.BLOCK`, which answers air for a non-block item whose path segment happens to
+   match the target's (`foo:andesite`); the port refuses the write instead of erasing the block.
+   Not reachable with the mod's own data, recorded as a guard rather than a fixed defect.
+
+### Harness facts this slice measured
+
+1. **A block goes into a bundle by a left click on the bundle slot with the block on the cursor**
+   (`bundle_click`'s `(Some(carried), false)` branch): phase 8 picks the block up first.
+2. **A right click does *not* take the block back out for the host's own click.** It picks the
+   bundle itself up (half a stack) — measured on a **vanilla `minecraft:bundle`** with three stone
+   inside, which behaves identically (`/tmp/opencode/vanilla-bundle-probe.sh` run, 2026-11-21). So
+   the take-out direction is the pin's menu, not this mod's, and phase 8d proves the lock's
+   replacement instead.
+3. **The creative inventory screen is the item list**, so phase 8 runs in survival (as phase 6
+   does) and returns to creative for the digs.
+4. **The chisel's slot and the block's slot are found from `ctl ui`** by item id, not assumed:
+   `give` decided slots 0 and 1 here, but a scan is what the assertion uses.
+5. **The launcher instance must be at the package's base build.** `native-build --instance e2e`
+   refused the new package because that instance was still on `native-0b14f8a-…` ("works on
+   another version only"); a fresh instance for the pin (`HORIZON_E2E_INSTANCE=chisel-e2e`) built
+   it first try.
+
+### Coverage (this slice, against the jar)
+
+| family (in the jar) | status |
+|---|---|
+| `andesite` family, 32 variants | **tested** — phases 0, 1/1b/2/3/4, counterfactual, 6 (unchanged from 0.2.2) |
+| `blackstone` family, 1 variant | **tested** — phases 0b, 5, counterfactual, 7 (unchanged) |
+| the chisel item (`chisel:chisel`) and its shaped recipe | **tested** — phase 6 crafts it and asserts both ingredients are consumed |
+| **the chisel's bundle contents (`canMine`'s second branch): a carried block decides the variant** | **tested** — phase 8 inserts a block through the game's inventory and asserts `minecraft:andesite` → `chisel:panel/andesite`; 8b asserts a blackstone block is left alone; 8c asserts the lock persists; 8d asserts the newest block wins; `SELFTEST=bundle` flips 8a |
+| **the chisel's custom GUI (`ChiselScreenHandler`, `createMenu`)** | **not ported — mapped to the game's bundle UI** (see *Behaviour changes caused by the mapping*): the capability exists, the 1.21.1 window does not |
+| the other **98 material families** (1,376 blocks) | **not ported** — the slice boundary (`FINDINGS.md` §2) |
+| the mod sound `chisel:chisel_sound` | **blocked(`native_play_sound` plays registered vanilla events only)** |
+| CTM (4,796 `optifine/` files, 4,795 `ctm/` sprites) | **not ported** — the pin has no CTM loader |
+| `ru_ru` / `zh_cn` translations | **not ported** — only `en_us` is carried |
+| tags `mineable/axe`, `mineable/shovel`, `needs_stone_tool`, `needs_iron_tool`, `c:glass_blocks` | **not ported** — none of the blocks they list is carried |
+| the creative tab | **not asserted in game** — the launcher-built native package writes no `creative-inventory.json` (recorded by the leg) |
+| advancements | none upstream, none carried |
+
+### Changelog (0.2.3)
+
+> **0.2.3 — the chisel's bundle contents, and the pin moved to `0a875da`.** Slice 3 adds
+> `ChiselItem.canMine`'s second branch: the chisel is now a real bundle
+> (`minecraft:bundle_contents` on the item), so a block put into it in the game's own inventory
+> makes every block of that material become the carried block — a chisel carrying
+> `chisel:panel/andesite` turns andesite into the panel, leaves blackstone alone, keeps the block
+> after the write, and takes a newly inserted block as the new lock. The rule is pure
+> (`runtime::lock_matches`; segment containment either way, stairs refused, no cross-material
+> write) and 4 runtime + 5 glue tests were written before it. Content: 296 files, only the chisel
+> item changed. Rebuilt on Horizon `0a875da` / mixins `e59da90`; `fits` prints `made for` at the
+> pin and `fits` at `0b14f8a`. In game the fifth leg and three selftests are green
+> (`check-e2e-logs.py --strict` 6/6). Same gaps: 98 material families, the 1.21.1 custom screen
+> (mapped to the bundle UI), the sound, CTM.
 
 Skills: superpowers/using-superpowers,brainstorming,writing-plans,test-driven-development,systematic-debugging,verification-before-completion; BeautifulRust/rust-best-practices,rust-port
